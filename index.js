@@ -36,74 +36,49 @@ async function diyFiles(lists) {
 }
 
 
-
-//转换文件格式
-// async function convertEncoding(filename, souceType) {
-//     try {
-//         let data = await fs.readFile(filename, 'binary')
-//         console.log(data, souceType.toLowerCase())
-//         const decoded = iconv.decode(data, souceType.toLowerCase());
-
-//         // 将解析后的csv内容重新编码为UTF-8
-//         const encoded = iconv.encode(decoded, 'utf8');
-//         return encoded
-//     } catch (error) {
-//         console.log(`文件转换出错: ${error}`)
-//     }
-// }
-function convertEncoding(filename, souceType) {
-    // 以二进制方式读取GB18030编码格式的csv文件
-    let filePath = path.join(process.cwd(), filename)
-    fs.readFile(filePath, 'binary', (err, data) => {
-        if (err) throw err;
-        console.log(data)
-        // 使用GB18030编码解析csv文件内容
-        const decoded = iconv.decode(data, souceType.toLowerCase());
-
-        // 将解析后的csv内容重新编码为UTF-8
-        const encoded = iconv.encode(decoded, 'utf8');
-        console.log(encoded)
-    });
+// 文件转换另存
+async function convertEncoding(filePath, souceType) {
+    let data = await fs.readFile(filePath, 'binary')
+    const decoded = iconv.decode(data, souceType.toLowerCase());
+    const encoded = iconv.encode(decoded, 'utf8');
+    return encoded
 }
 
 //写入文件
 async function writeFileStream(filename, data) {
+    let outPath = path.join(process.cwd(), filename + '.utf8.csv')
     await fs.writeFile(filename + '.utf8.csv', data.toString(), 'utf-8');
+    console.log(`成功转码${chalk.bgGreen('UTF-8')},文件路径-->：${outPath}`);
 }
-//         fs.writeFile(filename + '.utf8.csv', encoded.toString(), 'utf-8', (err) => {
-//             if (err) throw err;
-//             console.log('Conversion completed');
-//         });
+
 
 //另存文件格式
-async function fileSaveAs(fileName) {
-    const workbook = XLSX.readFile(fileName)
+async function fileSaveAs(filename) {
+    const workbook = XLSX.readFile(filename)
     const csvContent = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]]);
-    console.log(`转换文件中`)
-    fs.writeFile('temp.csv', csvContent, (err) => {
-        if (err) throw err;
-        console.log('CSV 文件已保存');
-    });
+    let outPath = path.join(process.cwd(), filename + '.utf8.csv')
+    await fs.writeFile(filename + '.utf8.csv', csvContent, 'utf-8');
+    console.log(`EXCEL另存为CSV,编码格式${chalk.bgGreen('UTF-8')} 文件路径-->：${outPath}`);
 }
 
 //检测文件编码格式
 async function detectEncode(filePath) {
     const data = await fs.readFile(filePath)
-    languageEncoding(data).then(async fileInfo => {
-        let codeType = fileInfo.encoding
-        let dict = {
-            'UTF-8': chalk.bgGreen(`${codeType}`),
-            'GB18030': chalk.bgYellow(`${codeType}`)
-        }
-        console.log(`文件当前编码格式:${dict[codeType]} 文件路径:${filePath}}`)
-        if (codeType === 'UTF-8') {
-            console.log(chalk.green('当前格式为UTF-8可直接导入,是否生成DDL?'))
-        } else {
-            let decoded = convertEncoding(filePath, codeType)
-            return decoded
-        }
+    const fileInfo = await languageEncoding(data)
+    let codeType = fileInfo.encoding
+    let dict = {
+        'UTF-8': chalk.bgGreen(`${codeType}`),
+        'GB18030': chalk.bgYellow(`${codeType}`)
+    }
+    console.log(`文件当前编码格式:${dict[codeType]} 文件名称:${filePath}`)
+    return {
+        codeType,
+        filePath
+    }
+}
 
-    })
+async function readHeader() {
+
 }
 
 
@@ -116,10 +91,18 @@ async function handleFile(filePath) {
     if (detectExcel.test(choice)) {
         await fileSaveAs(choice)
     } else if (detectCsv.test(choice)) {
-        let decoded = detectEncode(choice)
-        await writeFileStream(filePath, decoded)
+        let { codeType, filePath } = await detectEncode(choice)
+        if (codeType === 'UTF-8') {
+            console.log(chalk.green(`当前格式为${codeType}可直接导入,是否生成DDL?`))
+        } else {
+            console.log(chalk.yellow(`当前格式为${codeType},正在转换成UTF-8`))
+            let encoded = await convertEncoding(filePath, codeType)
+            await writeFileStream(filePath, encoded)
+        }
+    } else {
+        console.log(`${chalk.green(暂不支持该文件格式)}`)
+        return false
     }
-    // await fileSaveAs(choice)
 }
 
 handleFile(process.cwd()).catch(err => {
