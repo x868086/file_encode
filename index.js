@@ -6,7 +6,20 @@ import iconv from 'iconv-lite'
 import inquirer from 'inquirer';
 import chalk from 'chalk'
 
+const fileTypeHandle = {
+    excelHandle: fileSaveAs,
+    // csvHandle: 
+}
 
+const codeTypeHandle = {
+    'UTF-8': readHeader,
+    'GB18030': convertEncoding
+}
+
+const fileExtension = {
+    detectExcel: /\.xlsx$|\.xls$/g,
+    detectCsv: /\.csv$/g
+}
 
 //异步读取文件列表
 async function getFileList(filePath) {
@@ -77,8 +90,17 @@ async function detectEncode(filePath) {
     }
 }
 
-async function readHeader() {
-
+function readHeader(filePath) {
+    const workbook = XLSX.readFile(filePath);
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const headers = [];
+    for (let cell in worksheet) {
+        if (cell[0] === '!') continue;
+        if (cell[1] === '1') {
+            headers.push(worksheet[cell].v);
+        }
+    }
+    console.log(headers);
 }
 
 
@@ -94,6 +116,7 @@ async function handleFile(filePath) {
         let { codeType, filePath } = await detectEncode(choice)
         if (codeType === 'UTF-8') {
             console.log(chalk.green(`当前格式为${codeType}可直接导入,是否生成DDL?`))
+            readHeader(filePath)
         } else {
             console.log(chalk.yellow(`当前格式为${codeType},正在转换成UTF-8`))
             let encoded = await convertEncoding(filePath, codeType)
