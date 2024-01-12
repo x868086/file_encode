@@ -1,25 +1,44 @@
 import { promises as fs } from 'fs';
+import { createReadStream } from 'node:fs';
 import path from 'path';
 import XLSX from 'xlsx'
 import languageEncoding from 'detect-file-encoding-and-language'
 import iconv from 'iconv-lite'
 import inquirer from 'inquirer';
 import chalk from 'chalk'
+import ExcelJS from 'exceljs';
 
 const fileTypeHandle = {
-    excelHandle: fileSaveAs,
-    // csvHandle: 
+    'xlsx': fileSaveAs,
+    'xls': fileSaveAs,
+    'csv': csvMethod
 }
 
-const codeTypeHandle = {
-    'UTF-8': readHeader,
-    'GB18030': convertEncoding
+
+
+// csv文件方法
+async function csvMethod(choice) {
+    let { fileName, souceType } = await detectEncode(choice)
+    if (souceType === 'UTF-8') {
+        console.log(`✔️ 当前格式为${souceType}可直接导入, 文件路径-->：${path.join(process.cwd(), fileName)}`)
+        return {
+            codeType: souceType,
+            fileName: fileName,
+            outPath: path.join(process.cwd(), fileName)
+        }
+    } else if (souceType === 'GB18030') {
+        let { outPath } = await encodeSave(fileName, souceType)
+        return {
+            codeType: souceType,
+            fileName: fileName,
+            outPath: outPath
+        }
+    } else {
+        console.log(`❌ 不支持的文件编码格式`)
+        return false
+    }
 }
 
-const fileExtension = {
-    detectExcel: /\.xlsx$|\.xls$/g,
-    detectCsv: /\.csv$/g
-}
 
 //异步读取文件列表
 async function getFileList(filePath) {
@@ -28,7 +47,7 @@ async function getFileList(filePath) {
         const excelFiles = files.filter(file => path.extname(file) === '.xlsx' || path.extname(file) === '.xls' || path.extname(file) === '.csv');
         return excelFiles
     } catch (error) {
-        throw `读取当前目录文件出错${error}`
+        throw `❌   读取当前目录文件出错${error}`
     }
 }
 
@@ -44,13 +63,23 @@ async function diyFiles(lists) {
     ];
 
     let answers = await inquirer.prompt(promptList)
-    console.log(`已选择文件:${answers.choice}`);
     return answers.choice
 }
 
+// csv格式文件转码另存
+async function encodeSave(filePath, souceType) {
+    let encoded = await convertEncoding(filePath, souceType)
+    let { codeType, fileName, outPath } = await writeFileStream(filePath, encoded)
+    return {
+        codeType: codeType,
+        fileName: fileName,
+        outPath: outPath
+    }
+}
 
-// 文件转换另存
+// 文件转码
 async function convertEncoding(filePath, souceType) {
+    console.log(chalk.yellow(`当前格式为${souceType},正在转换成UTF-8`))
     let data = await fs.readFile(filePath, 'binary')
     const decoded = iconv.decode(data, souceType.toLowerCase());
     const encoded = iconv.encode(decoded, 'utf8');
@@ -61,75 +90,113 @@ async function convertEncoding(filePath, souceType) {
 async function writeFileStream(filename, data) {
     let outPath = path.join(process.cwd(), filename + '.utf8.csv')
     await fs.writeFile(filename + '.utf8.csv', data.toString(), 'utf-8');
-    console.log(`成功转码${chalk.bgGreen('UTF-8')},文件路径-->：${outPath}`);
+    console.log(`✔️ 成功转码${chalk.bgGreen('UTF-8')},  文件路径-->：${outPath}`);
+    return {
+        codeType: 'UTF-8',
+        fileName: filename,
+        outPath: outPath
+    }
 }
 
 
-//另存文件格式
+//Excel文件方法
 async function fileSaveAs(filename) {
     const workbook = XLSX.readFile(filename)
     const csvContent = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]]);
     let outPath = path.join(process.cwd(), filename + '.utf8.csv')
     await fs.writeFile(filename + '.utf8.csv', csvContent, 'utf-8');
-    console.log(`EXCEL另存为CSV,编码格式${chalk.bgGreen('UTF-8')} 文件路径-->：${outPath}`);
+    console.log(`✔️ EXCEL另存为CSV,编码格式${chalk.bgGreen('UTF-8')},  文件路径-->：${outPath}`);
+    return {
+        codeType: 'UTF-8',
+        fileName: filename,
+        outPath: outPath
+    }
 }
 
 //检测文件编码格式
-async function detectEncode(filePath) {
-    const data = await fs.readFile(filePath)
+async function detectEncode(fileName) {
+    const data = await fs.readFile(fileName)
     const fileInfo = await languageEncoding(data)
-    let codeType = fileInfo.encoding
+    let souceType = fileInfo.encoding
     let dict = {
-        'UTF-8': chalk.bgGreen(`${codeType}`),
-        'GB18030': chalk.bgYellow(`${codeType}`)
+        'UTF-8': chalk.bgGreen(`${souceType}`),
+        'GB18030': chalk.bgYellow(`${souceType}`)
     }
-    console.log(`文件当前编码格式:${dict[codeType]} 文件名称:${filePath}`)
+    console.log(`文件当前编码格式:${dict[souceType]} 文件名称:${fileName}`)
     return {
-        codeType,
-        filePath
+        fileName,
+        souceType
     }
 }
 
-function readHeader(filePath) {
-    const workbook = XLSX.readFile(filePath);
-    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+
+async function readExcelStream(filepath) {
+    const workbook = new ExcelJS.Workbook();
+    const stream = createReadStream(filepath);
+    stream.on('data', chunk => {
+        // 处理每个数据块
+        //   console.log('Received', chunk.length, 'bytes of data.');
+    })
+    stream.on('end', () => {
+        console.log(`✔️ 读取文件结束，文件路径为${filepath}`);
+    })
+    stream.on('error', error => {
+        throw new Error(`读取文件错误${error}`)
+    })
+
+    // await workbook.xlsx.read(stream);
+    // const worksheet = workbook.getWorksheet(1);
+    const worksheet = await workbook.csv.read(stream);
+
+    return { workbook, worksheet }
+}
+
+
+async function getHeaderCol(worksheet) {
     const headers = [];
-    for (let cell in worksheet) {
-        if (cell[0] === '!') continue;
-        if (cell[1] === '1') {
-            headers.push(worksheet[cell].v);
+    worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+        if (rowNumber === 1) {
+            row.eachCell({ includeEmpty: true }, (cell) => {
+                headers.push({
+                    value: cell.text,
+                    address: cell.address
+                });
+            });
+        } else {
+            return
         }
-    }
-    console.log(headers);
+    });
+    return { headers: headers, colLenth: worksheet.columns.length }
 }
 
+async function readHeader(filePath) {
+    let { workbook, worksheet } = await readExcelStream(filePath);
+    let { headers, colLenth } = await getHeaderCol(worksheet)
+    console.log(`11111111111 ${headers} ${colLenth}`)
+    return {
+        headers, colLenth
+    }
+}
+// const reg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\W_!@#$%^&*`~()-+=]+)/g
+const reg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\W_!@#$%^&*`~()-+=]+)/g
 
 
 async function handleFile(filePath) {
     let files = await getFileList(filePath)
     let choice = await diyFiles(files)
-    let detectExcel = /\.xlsx$|\.xls$/g
-    let detectCsv = /\.csv$/g
-    if (detectExcel.test(choice)) {
-        await fileSaveAs(choice)
-    } else if (detectCsv.test(choice)) {
-        let { codeType, filePath } = await detectEncode(choice)
-        if (codeType === 'UTF-8') {
-            console.log(chalk.green(`当前格式为${codeType}可直接导入,是否生成DDL?`))
-            readHeader(filePath)
-        } else {
-            console.log(chalk.yellow(`当前格式为${codeType},正在转换成UTF-8`))
-            let encoded = await convertEncoding(filePath, codeType)
-            await writeFileStream(filePath, encoded)
-        }
+    const extension = path.extname(choice)
+    const extensionWithoutDot = extension.replace(/^\./, '');
+    if ((/\.xlsx$|\.xls$|\.csv$/g).test(extension)) {
+        let { codeType, fileName, outPath } = await fileTypeHandle[extensionWithoutDot](choice)
+        readHeader(outPath)
     } else {
-        console.log(`${chalk.green(暂不支持该文件格式)}`)
+        console.log(`❌ ${chalk.green(暂不支持该文件格式)}`)
         return false
     }
 }
 
 handleFile(process.cwd()).catch(err => {
-    console.log('读取命令行发生错误：', err)
+    console.log('❌ 读取命令行发生错误：', err)
     throw err
 })
 
