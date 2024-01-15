@@ -14,7 +14,22 @@ const fileTypeHandle = {
     'csv': csvMethod
 }
 
-const tableHeadReg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*`·+,\-.\/:;<=>?@\[\]^_{|}~]+)/g
+const tableHeadReg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*`·+,\-.\/:;<=>?@\[\]^{|}~]+)/g
+// const tableHeadReg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*`·+,\-.\/:;<=>?@\[\]^_{|}~]+)/g
+
+
+// 时间戳函数
+function getFormattedDateTime() {
+    var date = new Date();
+    var month = (date.getMonth() + 1).toString().padStart(2, '0'); // 月份从0开始，需要加1
+    var day = date.getDate().toString().padStart(2, '0');
+    var hours = date.getHours().toString().padStart(2, '0');
+    var minutes = date.getMinutes().toString().padStart(2, '0');
+    var seconds = date.getSeconds().toString().padStart(2, '0');
+
+    var formattedDateTime = month + day + hours + minutes + seconds;
+    return formattedDateTime;
+}
 
 
 
@@ -23,7 +38,7 @@ const tableHeadReg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|
 async function csvMethod(choice) {
     let { fileName, souceType } = await detectEncode(choice)
     if (souceType === 'UTF-8') {
-        console.log(`✔️ 当前格式为${souceType}可直接导入, 文件路径-->：${path.join(process.cwd(), fileName)}`)
+        console.log(`✔️ 当前格式为${chalk.bgGreen(souceType)}可直接导入, 文件路径-->：${path.join(process.cwd(), fileName)}`)
         return {
             codeType: souceType,
             fileName: fileName,
@@ -141,10 +156,10 @@ async function readExcelStream(filepath) {
         //   console.log('Received', chunk.length, 'bytes of data.');
     })
     stream.on('end', () => {
-        console.log(`✔️ 读取文件结束，文件路径为${filepath}`);
+        // console.log(`✔️ 读取文件结束，文件路径-->: ${filepath}`);
     })
     stream.on('error', error => {
-        throw new Error(`读取文件错误${error}`)
+        throw new Error(`❌ 读取文件错误${error}`)
     })
 
     // await workbook.xlsx.read(stream);
@@ -175,21 +190,71 @@ async function getHeaderCol(worksheet) {
 async function cleanHeader(filePath) {
     let { workbook, worksheet } = await readExcelStream(filePath);
     let { headers, colLenth } = await getHeaderCol(worksheet)
-
     let newHeaders = []
     headers.forEach((e, i, a) => {
-        let str = (e.value.trim().length === 0) ? `空位${i + 1}` : e.value.replaceAll(tableHeadReg, '')
+        // step0 去除空格,step1 去除标点符号, step2数字开头修复,step3 字符长度限制
+        let step0 = e.value.replaceAll(' ', '');
+        let step1 = step0.replaceAll(tableHeadReg, '')
+        let step2 = /^(\d)/.test(step1) ? `修正${step1}` : step1
+        let step3 = step2.length > 15 ? step2.slice(0, 15) : step2
+        let str = (e.value.trim().length === 0) ? `空字段${i + 1}` : step3
         newHeaders.push(str)
     })
     return { workbook, worksheet, newHeaders }
 }
 
-async function appendNewHeader(workbook, worksheet, arr) {
-    const insertedRow = await worksheet.insertRow(1, arr)
-    const row1 = worksheet.getRow(1)
-    const row2 = worksheet.getRow(2)
-    const row3 = worksheet.getRow(3)
-    await workbook.csv.writeFile(`test.csv`, { encoding: 'utf-8' })
+async function appendNewHeader(workbook, worksheet, arr, outPath) {
+    try {
+        const insertedRow = await worksheet.insertRow(1, arr)
+        // const row1 = worksheet.getRow(1)
+        // const row2 = worksheet.getRow(2)
+        // const row3 = worksheet.getRow(3)
+        await worksheet.spliceRows(2, 1)
+        await workbook.csv.writeFile(`${outPath}`, { encoding: 'utf-8' })
+        console.log(`✔️ 表头已清洗`)
+        return {
+            ddlHeader: arr
+        }
+    } catch (error) {
+        console.log(`❌ 清洗表头出错,请检查表头是否有特殊字符`)
+    }
+}
+
+// 创建表 DDL
+async function createDDL(arr, tableName, fileName) {
+    let str = '';
+    arr.forEach((e, i, a) => {
+        if (i === a.length - 1) {
+            str += `${e} varchar(255)`
+        } else {
+            str += `${e} varchar(255),
+            `
+        }
+
+    })
+    let ddl = `
+    DROP TABLE IF EXISTS ${tableName};
+    CREATE TABLE ${tableName} 
+    (
+            ${str}
+    );`
+    // DDL写入到文本文件
+    let outPath = path.join(process.cwd(), fileName + '.DDL.txt')
+    //fs.writeFile(outPath, ddl, (err) => {
+    //     if (err) {
+    //         console.error('❌ 写入DDL文件时发生错误:', err);
+    //     } else {
+    //         console.log('✔️ DDL文件创建成功, DDL路径-->：${outPath}');
+    //     }
+    // });
+    try {
+        await fs.writeFile(outPath, ddl)
+        console.log(`✔️ DDL文件创建成功, DDL路径-->：${outPath}`);
+    } catch (error) {
+        console.error('❌ 写入DDL文件时发生错误:', error);
+    }
+
+    return ddl
 }
 
 
@@ -199,10 +264,13 @@ async function handleFile(filePath) {
     const extension = path.extname(choice)
     const extensionWithoutDot = extension.replace(/^\./, '');
     if ((/\.xlsx$|\.xls$|\.csv$/g).test(extension)) {
+        // 不同类型文件调用不同方法 - table drive 
         let { codeType, fileName, outPath } = await fileTypeHandle[extensionWithoutDot](choice)
+        // 将转码utf-8后的csv文件，清洗表头，另存为同名原文件
         let { workbook, worksheet, newHeaders } = await cleanHeader(outPath)
-        await appendNewHeader(workbook, worksheet, newHeaders)
-
+        let { ddlHeader } = await appendNewHeader(workbook, worksheet, newHeaders, outPath)
+        let ddl = await createDDL(ddlHeader, `IMPORT_${getFormattedDateTime()}`, fileName)
+        console.log(ddl)
     } else {
         console.log(`❌ ${chalk.green(暂不支持该文件格式)}`)
         return false
