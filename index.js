@@ -120,6 +120,11 @@ async function writeFileStream(filename, data) {
 //Excel文件方法
 async function fileSaveAs(filename) {
     const workbook = XLSX.readFile(filename)
+    // // 创建可读流
+    // const stream = createReadStream(filename);
+    // // 创建解析器
+    // const workbook = XLSX.read(stream, { type: 'buffer' });
+
     const csvContent = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]]);
     let outPath = path.join(process.cwd(), filename + '.utf8.csv')
     await fs.writeFile(filename + '.utf8.csv', csvContent, 'utf-8');
@@ -153,7 +158,7 @@ async function readExcelStream(filepath) {
     const stream = createReadStream(filepath);
     stream.on('data', chunk => {
         // 处理每个数据块
-        //   console.log('Received', chunk.length, 'bytes of data.');
+        console.log('Received', chunk.length, 'bytes of data.');
     })
     stream.on('end', () => {
         // console.log(`✔️ 读取文件结束，文件路径-->: ${filepath}`);
