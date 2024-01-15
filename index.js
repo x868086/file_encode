@@ -14,6 +14,9 @@ const fileTypeHandle = {
     'csv': csvMethod
 }
 
+const tableHeadReg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*`·+,\-.\/:;<=>?@\[\]^_{|}~]+)/g
+
+
 
 
 // csv文件方法
@@ -169,16 +172,25 @@ async function getHeaderCol(worksheet) {
     return { headers: headers, colLenth: worksheet.columns.length }
 }
 
-async function readHeader(filePath) {
+async function cleanHeader(filePath) {
     let { workbook, worksheet } = await readExcelStream(filePath);
     let { headers, colLenth } = await getHeaderCol(worksheet)
-    console.log(`11111111111 ${headers} ${colLenth}`)
-    return {
-        headers, colLenth
-    }
+
+    let newHeaders = []
+    headers.forEach((e, i, a) => {
+        let str = (e.value.trim().length === 0) ? `空位${i + 1}` : e.value.replaceAll(tableHeadReg, '')
+        newHeaders.push(str)
+    })
+    return { workbook, worksheet, newHeaders }
 }
-// const reg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\W_!@#$%^&*`~()-+=]+)/g
-const reg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\W_!@#$%^&*`~()-+=]+)/g
+
+async function appendNewHeader(workbook, worksheet, arr) {
+    const insertedRow = await worksheet.insertRow(1, arr)
+    const row1 = worksheet.getRow(1)
+    const row2 = worksheet.getRow(2)
+    const row3 = worksheet.getRow(3)
+    await workbook.csv.writeFile(`test.csv`, { encoding: 'utf-8' })
+}
 
 
 async function handleFile(filePath) {
@@ -188,7 +200,9 @@ async function handleFile(filePath) {
     const extensionWithoutDot = extension.replace(/^\./, '');
     if ((/\.xlsx$|\.xls$|\.csv$/g).test(extension)) {
         let { codeType, fileName, outPath } = await fileTypeHandle[extensionWithoutDot](choice)
-        readHeader(outPath)
+        let { workbook, worksheet, newHeaders } = await cleanHeader(outPath)
+        await appendNewHeader(workbook, worksheet, newHeaders)
+
     } else {
         console.log(`❌ ${chalk.green(暂不支持该文件格式)}`)
         return false
