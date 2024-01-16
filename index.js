@@ -1,5 +1,5 @@
 import { promises as fs } from 'fs';
-import { createReadStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import path from 'path';
 import XLSX from 'xlsx'
 import languageEncoding from 'detect-file-encoding-and-language'
@@ -9,8 +9,8 @@ import chalk from 'chalk'
 import ExcelJS from 'exceljs';
 
 const fileTypeHandle = {
-    'xlsx': fileSaveAs,
-    'xls': fileSaveAs,
+    'xlsx': fileSaveAsCsv,
+    'xls': fileSaveAsCsv,
     'csv': csvMethod
 }
 
@@ -117,18 +117,38 @@ async function writeFileStream(filename, data) {
 }
 
 
-//Excel文件方法
-async function fileSaveAs(filename) {
-    const workbook = XLSX.readFile(filename)
-    // // 创建可读流
-    // const stream = createReadStream(filename);
-    // // 创建解析器
-    // const workbook = XLSX.read(stream, { type: 'buffer' });
+//Excel文件同步读取方法 弃用
+// async function fileSaveAs(filename) {
+//     const workbook = XLSX.readFile(filename)
+//     const csvContent = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]]);
+//     let outPath = path.join(process.cwd(), filename + '.utf8.csv')
+//     await fs.writeFile(filename + '.utf8.csv', csvContent, 'utf-8');
+//     console.log(`✔️ EXCEL另存为CSV,编码格式${chalk.bgGreen('UTF-8')},  文件路径-->：${outPath}`);
+//     return {
+//         codeType: 'UTF-8',
+//         fileName: filename,
+//         outPath: outPath
+//     }
+// }
 
-    const csvContent = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]]);
+async function fileSaveAsCsv(filename) {
+    let { workbook, worksheet } = await readExcelStream(filename)
+
     let outPath = path.join(process.cwd(), filename + '.utf8.csv')
-    await fs.writeFile(filename + '.utf8.csv', csvContent, 'utf-8');
+    const stream = createWriteStream(outPath);
+    stream.on('data', chunk => {
+        // 处理每个数据块
+        console.log('Received', chunk.length, 'bytes of data.');
+    })
+    stream.on('end', () => {
+        // console.log(`✔️ 读取文件结束，文件路径-->: ${filepath}`);
+    })
+    stream.on('error', error => {
+        throw new Error(`❌ CSV文件读取文件错误${error}`)
+    })
+    await workbook.csv.write(stream, { sheetId: 1 });
     console.log(`✔️ EXCEL另存为CSV,编码格式${chalk.bgGreen('UTF-8')},  文件路径-->：${outPath}`);
+    stream.end()
     return {
         codeType: 'UTF-8',
         fileName: filename,
@@ -152,25 +172,45 @@ async function detectEncode(fileName) {
     }
 }
 
-
-async function readExcelStream(filepath) {
+// csv文件流式读取
+async function readCSVStream(filepath) {
     const workbook = new ExcelJS.Workbook();
     const stream = createReadStream(filepath);
     stream.on('data', chunk => {
         // 处理每个数据块
-        console.log('Received', chunk.length, 'bytes of data.');
+        // console.log('Received', chunk.length, 'bytes of data.');
     })
     stream.on('end', () => {
         // console.log(`✔️ 读取文件结束，文件路径-->: ${filepath}`);
     })
     stream.on('error', error => {
-        throw new Error(`❌ 读取文件错误${error}`)
+        throw new Error(`❌ CSV文件读取文件错误${error}`)
     })
 
     // await workbook.xlsx.read(stream);
     // const worksheet = workbook.getWorksheet(1);
     const worksheet = await workbook.csv.read(stream);
 
+    return { workbook, worksheet }
+}
+
+// excel文件流式读取
+async function readExcelStream(filepath) {
+    const workbook = new ExcelJS.Workbook();
+    const stream = createReadStream(filepath);
+
+    stream.on('data', chunk => {
+        // 处理每个数据块
+
+        console.log('Received', chunk.length, 'bytes of data.');
+    })
+    stream.on('end', () => {
+        // console.log(`✔️ 读取文件结束，文件路径-->: ${filepath}`);
+    })
+    stream.on('error', error => {
+        throw new Error(`❌ EXCEL文件读取文件错误${error}`)
+    })
+    const worksheet = await workbook.xlsx.read(stream);
     return { workbook, worksheet }
 }
 
@@ -193,7 +233,7 @@ async function getHeaderCol(worksheet) {
 }
 
 async function cleanHeader(filePath) {
-    let { workbook, worksheet } = await readExcelStream(filePath);
+    let { workbook, worksheet } = await readCSVStream(filePath);
     let { headers, colLenth } = await getHeaderCol(worksheet)
     let newHeaders = []
     headers.forEach((e, i, a) => {
@@ -362,3 +402,82 @@ handleFile(process.cwd()).catch(err => {
 //         });
 //     });
 // }
+
+
+
+// // 内存占用
+// const memoryUsage = process.memoryUsage();
+
+// console.log('Heap memory usage:');
+// console.log('Total:', `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)} MB`);
+// console.log('Used:', `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+
+
+
+
+
+// 要以流的方式将 Excel 文件读取为 Workbook，并将其写入 CSV 文件，您可以使用 Node.js 的流（Stream）来实现。
+
+// 以下是一个示例代码，演示如何使用流将 Excel 文件读取为 Workbook，并将其写入 CSV 文件：
+
+// const fs = require('fs');
+// const ExcelJS = require('exceljs');
+// const { createObjectCsvWriter } = require('csv-writer');
+
+// // 创建一个可写流，用于写入 CSV 文件
+// const csvStream = fs.createWriteStream('output.csv');
+
+// // 创建一个 CSV 写入器
+// const csvWriter = createObjectCsvWriter({
+//   path: 'output.csv',
+//   header: ['Column1', 'Column2', 'Column3'], // 替换为实际的列名
+//   alwaysQuote: true, // 可选：如果需要始终引用字段值，请设置为 true
+// });
+
+// // 创建一个 Workbook 实例
+// const workbook = new ExcelJS.Workbook();
+
+// // 从流中读取 Excel 文件
+// const readStream = fs.createReadStream('input.xlsx');
+
+// // 将读取的流传递给 Workbook 的 read 方法
+// workbook.xlsx.read(readStream)
+//   .then(() => {
+//     const worksheet = workbook.getWorksheet(1); // 选择第一个工作表
+
+//     // 将 CSV 写入流
+//     csvWriter.pipe(csvStream);
+
+//     // 通过逐行读取 Excel 文件，并将数据写入 CSV 文件
+//     worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+//       const rowData = row.values.slice(1); // 忽略第一个列（行号）
+
+//       // 将数据写入 CSV 文件
+//       csvWriter.writeRecords([rowData])
+//         .then(() => {
+//           console.log(`Row ${rowNumber} written to CSV`);
+//         })
+//         .catch((error) => {
+//           console.error(`Error writing row ${rowNumber} to CSV:`, error);
+//         });
+//     });
+
+//     // 结束 CSV 写入流
+//     csvWriter.end();
+//   })
+//   .catch((error) => {
+//     console.error('Error reading Excel file:', error);
+//   });
+
+
+//   在上述示例中，我们使用 fs.createReadStream() 方法创建一个可读流，以从文件中读取 Excel 文件。然后，我们将读取的流传递给 workbook.xlsx.read() 方法，将其读取为 Workbook。
+
+// 接下来，我们创建一个可写流 csvStream，用于写入 CSV 文件。然后，我们使用 createObjectCsvWriter 创建一个 CSV 写入器 csvWriter。
+
+// 在读取 Excel 文件和准备写入 CSV 文件之后，我们使用 pipe() 方法将 CSV 写入器的输出流连接到 CSV 写入流，以便将数据写入 CSV 文件。
+
+// 最后，我们通过逐行读取 Excel 文件的方式将数据写入 CSV 文件。在写入完所有行后，我们调用 csvWriter.end() 结束 CSV 写入流。
+
+// 请注意，您需要将示例代码中的 input.xlsx 替换为实际的 Excel 文件路径，以及根据实际的列名调整 header 数组。另外，您还可以根据需要进行错误处理和其他自定义操作。
+
+// 这样，您就可以以流的方式将 Excel 文件读取为 Workbook，并将其写入 CSV 文件了。

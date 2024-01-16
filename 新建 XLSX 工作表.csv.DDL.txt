@@ -1,9 +1,0 @@
-
-    DROP TABLE IF EXISTS IMPORT_0115224033;
-    CREATE TABLE IMPORT_0115224033 
-    (
-            a varchar(255),
-            b varchar(255),
-            c varchar(255),
-            d varchar(255)
-    );
