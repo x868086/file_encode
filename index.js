@@ -7,7 +7,8 @@ import iconv from 'iconv-lite'
 import inquirer from 'inquirer';
 import chalk from 'chalk'
 import ExcelJS from 'exceljs';
-// import { createObjectCsvWriter } from 'csv-writer';
+
+import csv from 'fast-csv';
 
 const fileTypeHandle = {
     'xlsx': fileSaveAsCsv2,
@@ -161,28 +162,66 @@ async function fileSaveAsCsv(filename) {
 
 async function fileSaveAsCsv2(filename) {
     let outPath = path.join(process.cwd(), filename + '.utf8.csv')
-    const workbook = new ExcelJS.Workbook();
-    workbook.xlsx.readFile(filename)
-        .then(function () {
-            // 创建CSV文件写入流
-            const csvStream = createWriteStream(outPath);
+    const writeStream = createWriteStream(outPath);
+    const csvStream = csv.format({ headers: true })
+    csvStream.pipe(writeStream)
+    const options = {
+        sharedStrings: 'cache',
+        hyperlinks: 'emit',
+        worksheets: 'emit',
+    };
+    const workbookReader = new ExcelJS.stream.xlsx.WorkbookReader(filename, options);
+    workbookReader.read();
 
-            // 遍历工作表并将数据写入CSV文件
-            workbook.eachSheet(function (worksheet, sheetId) {
-                worksheet.eachRow(function (row, rowNumber) {
-                    // 将每一行的数据写入CSV文件
-                    csvStream.write(row.values.join(',') + '\n');
-                });
-            });
-
-            // 关闭CSV文件写入流
-            csvStream.end();
-            return {
-                codeType: 'UTF-8',
-                fileName: filename,
-                outPath: outPath
-            }
+    workbookReader.on('worksheet', worksheet => {
+        worksheet.on('row', row => {
+            // on方法配合map过滤，遍历8万次后内存溢出，如何改进？
+            // console.log(row.values)
+            // rowData = row.values.slice(1);
+            var abc = row.values.map(e => {
+                return (e instanceof Object && e['result']) ? e['result'] : e
+            })
+            console.log(abc, row.number)
+            csvStream.write(row.values)
+            // csvStream.write(abc)
         });
+
+
+        //         const batchSize = 1000;
+        // let currentBatch = [];
+
+        // worksheet.on('row', row => {
+        //     var abc = row.values.map(e => {
+        //         return (e instanceof Object && e['result']) ? e['result'] : e;
+        //     });
+
+        //     currentBatch.push(abc);
+
+        //     if (currentBatch.length >= batchSize) {
+        //         // 处理批次（例如，写入CSV）
+        //         csvStream.write(currentBatch);
+
+        //         // 为下一组行清除批次
+        //         currentBatch = [];
+        //     }
+        // });
+
+        // // 确保在循环后处理任何剩余的行
+        // worksheet.on('end', () => {
+        //     if (currentBatch.length > 0) {
+        //         // 处理剩余的行
+        //         csvStream.write(currentBatch);
+        //     }
+        // });
+
+    });
+
+    workbookReader.on('end', () => {
+        console.log('完成1111111111111')
+    });
+    workbookReader.on('error', (err) => {
+        console.log('错误2222222222222', err)
+    });
 
 }
 
@@ -340,10 +379,10 @@ async function handleFile(filePath) {
     const extension = path.extname(choice)
     const extensionWithoutDot = extension.replace(/^\./, '');
     if ((/\.xlsx$|\.xls$|\.csv$/g).test(extension)) {
-        // // 不同类型文件调用不同方法 - table drive 
+        // 不同类型文件调用不同方法 - table drive 
         // let { codeType, fileName, outPath } = await fileTypeHandle[extensionWithoutDot](choice)
         await fileTypeHandle[extensionWithoutDot](choice)
-        // //将转码utf-8后的csv文件，清洗表头，另存为同名原文件
+        //将转码utf-8后的csv文件，清洗表头，另存为同名原文件
         // let { workbook, worksheet, newHeaders } = await cleanHeader(outPath)
         // let { ddlHeader } = await appendNewHeader(workbook, worksheet, newHeaders, outPath)
         // let ddl = await createDDL(ddlHeader, `IMPORT_${getFormattedDateTime()}`, fileName)
@@ -517,3 +556,40 @@ handleFile(process.cwd()).catch(err => {
 // 请注意，您需要将示例代码中的 input.xlsx 替换为实际的 Excel 文件路径，以及根据实际的列名调整 header 数组。另外，您还可以根据需要进行错误处理和其他自定义操作。
 
 // 这样，您就可以以流的方式将 Excel 文件读取为 Workbook，并将其写入 CSV 文件了。
+
+
+
+
+
+// const { createReadStream, createWriteStream } = require('fs');
+
+// const readStream = createReadStream('../largefile.txt', {
+//     highWaterMark: 10000
+// });
+
+// const writeStream = createWriteStream('./copy.txt', {
+//     highWaterMark: 10000
+// });
+
+// readStream.on('data', function (chunk) {
+//     const result = writeStream.write(chunk);
+
+//     if (!result) {
+//         console.log("BACKPRESSURE");
+//         readStream.pause();
+//     }
+// });
+
+// writeStream.on('drain', () => {
+//     console.log("DRAINED");
+//     readStream.resume();
+// });
+
+// readStream.on('end', function () {
+//     console.log("reading done");
+//     writeStream.end();
+// });
+
+// writeStream.on('close', function () {
+//     console.log("Writing done.");
+// });
