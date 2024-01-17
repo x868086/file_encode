@@ -1,16 +1,17 @@
 import { promises as fs } from 'fs';
 import { createReadStream, createWriteStream } from 'node:fs';
 import path from 'path';
-import XLSX from 'xlsx'
+// import XLSX from 'xlsx'
 import languageEncoding from 'detect-file-encoding-and-language'
 import iconv from 'iconv-lite'
 import inquirer from 'inquirer';
 import chalk from 'chalk'
 import ExcelJS from 'exceljs';
+// import { createObjectCsvWriter } from 'csv-writer';
 
 const fileTypeHandle = {
-    'xlsx': fileSaveAsCsv,
-    'xls': fileSaveAsCsv,
+    'xlsx': fileSaveAsCsv2,
+    'xls': fileSaveAsCsv2,
     'csv': csvMethod
 }
 
@@ -155,6 +156,36 @@ async function fileSaveAsCsv(filename) {
         outPath: outPath
     }
 }
+
+
+
+async function fileSaveAsCsv2(filename) {
+    let outPath = path.join(process.cwd(), filename + '.utf8.csv')
+    const workbook = new ExcelJS.Workbook();
+    workbook.xlsx.readFile(filename)
+        .then(function () {
+            // 创建CSV文件写入流
+            const csvStream = createWriteStream(outPath);
+
+            // 遍历工作表并将数据写入CSV文件
+            workbook.eachSheet(function (worksheet, sheetId) {
+                worksheet.eachRow(function (row, rowNumber) {
+                    // 将每一行的数据写入CSV文件
+                    csvStream.write(row.values.join(',') + '\n');
+                });
+            });
+
+            // 关闭CSV文件写入流
+            csvStream.end();
+            return {
+                codeType: 'UTF-8',
+                fileName: filename,
+                outPath: outPath
+            }
+        });
+
+}
+
 
 //检测文件编码格式
 async function detectEncode(fileName) {
@@ -309,13 +340,14 @@ async function handleFile(filePath) {
     const extension = path.extname(choice)
     const extensionWithoutDot = extension.replace(/^\./, '');
     if ((/\.xlsx$|\.xls$|\.csv$/g).test(extension)) {
-        // 不同类型文件调用不同方法 - table drive 
-        let { codeType, fileName, outPath } = await fileTypeHandle[extensionWithoutDot](choice)
-        // 将转码utf-8后的csv文件，清洗表头，另存为同名原文件
-        let { workbook, worksheet, newHeaders } = await cleanHeader(outPath)
-        let { ddlHeader } = await appendNewHeader(workbook, worksheet, newHeaders, outPath)
-        let ddl = await createDDL(ddlHeader, `IMPORT_${getFormattedDateTime()}`, fileName)
-        console.log(ddl)
+        // // 不同类型文件调用不同方法 - table drive 
+        // let { codeType, fileName, outPath } = await fileTypeHandle[extensionWithoutDot](choice)
+        await fileTypeHandle[extensionWithoutDot](choice)
+        // //将转码utf-8后的csv文件，清洗表头，另存为同名原文件
+        // let { workbook, worksheet, newHeaders } = await cleanHeader(outPath)
+        // let { ddlHeader } = await appendNewHeader(workbook, worksheet, newHeaders, outPath)
+        // let ddl = await createDDL(ddlHeader, `IMPORT_${getFormattedDateTime()}`, fileName)
+        // console.log(ddl)
     } else {
         console.log(`❌ ${chalk.green(暂不支持该文件格式)}`)
         return false
@@ -405,14 +437,18 @@ handleFile(process.cwd()).catch(err => {
 
 
 
-// // 内存占用
+// // 当前nodejs环境已分配的堆内存的大小
 // const memoryUsage = process.memoryUsage();
-
 // console.log('Heap memory usage:');
 // console.log('Total:', `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)} MB`);
 // console.log('Used:', `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)} MB`);
 
+// // 当前nodejs环境默认的堆内存大小，默认情况下，Node.js 进程可以使用的最大堆内存大小
+// const v8 = require('v8');
+// const heapStatistics = v8.getHeapStatistics();
+// console.log(`Default heap size:, ${(heapStatistics.heap_size_limit/1024/1024).toFixed(2)} MB`);
 
+// node --max-old-space-size=8192 your_script.js  增加Node.js的堆内存限制单位MB
 
 
 
