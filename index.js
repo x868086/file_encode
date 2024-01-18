@@ -1,7 +1,6 @@
 import { promises as fs } from 'fs';
 import { createReadStream, createWriteStream } from 'node:fs';
 import path from 'path';
-// import XLSX from 'xlsx'
 import languageEncoding from 'detect-file-encoding-and-language'
 import iconv from 'iconv-lite'
 import inquirer from 'inquirer';
@@ -10,11 +9,17 @@ import ExcelJS from 'exceljs';
 
 import csv from 'fast-csv';
 
+import ora from 'ora';
+
 import v8 from 'v8';
 const heapStatistics = v8.getHeapStatistics();
 const defaultHeapSize = (heapStatistics.heap_size_limit / 1024 / 1024).toFixed(2)
 
-
+const loading = ora({
+    color: 'green',
+    text: 'Loading...',
+    prefixText: '读取表格',
+});
 
 
 const fileTypeHandle = {
@@ -145,6 +150,7 @@ async function writeFileStream(filename, data) {
 //     }
 // }
 
+// 常规流的方式读取表格，不适用于大型表格文件
 async function fileSaveAsCsv(filename) {
     let { workbook, worksheet } = await readExcelStream(filename)
 
@@ -171,7 +177,7 @@ async function fileSaveAsCsv(filename) {
 }
 
 
-
+// 流式读取表格逐行处理，另存为utf8 csv文件，适用大型表格文件
 async function fileSaveAsCsv2(filename) {
     let outPath = path.join(process.cwd(), filename + '.utf8.csv')
     const writeStream = createWriteStream(outPath);
@@ -186,35 +192,57 @@ async function fileSaveAsCsv2(filename) {
     workbookReader.read();
 
     workbookReader.on('worksheet', worksheet => {
-        // console.log(worksheet.rowCount)
+        loading.text = 'Loading...'
+        loading.start()
         worksheet.on('row', row => {
-            console.log(row.cells)
-            console.log(row.number)
-            console.log(row.values)
-            // 第一轮遍历将单元格公式转换成具体的值
-            var cellContent = row.values.map(e => {
-                return (e instanceof Object && e['result']) ? e['result'] : e
-            })
-                //第二轮遍历去除逗号
-                .map(e => {
-                    return (typeof (e) === 'string') ? cleanComma(e, commaReg) : e
+            loading.suffixText = `  内存使用 ${(((process.memoryUsage()).heapTotal) / 1024 / 1024).toFixed(2)} MB`
+            // 只读取第一个sheet
+            if (row.worksheet.id === 1) {
+                // 第一轮遍历将单元格公式转换成具体的值
+                var cellContent = row.values.map(e => {
+                    return (e instanceof Object && e['result']) ? e['result'] : e
                 })
-            // console.log(row.number)
-            // 忽略第一个列（行号）
-            csvStream.write(cellContent.slice(1))
-            var memoryUsage = process.memoryUsage();
-            // console.log(`Default heap size: ${defaultHeapSize} MB,   Heap memory usage: ${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)} MB`);
-
-
+                    //第二轮遍历去除逗号
+                    .map(e => {
+                        return (typeof (e) === 'string') ? cleanComma(e, commaReg) : e
+                    })
+                // console.log(row.number)
+                // 忽略第一个列（行号）
+                csvStream.write(cellContent.slice(1))
+            }
         });
     });
 
-    workbookReader.on('end', () => {
-        console.log('完成1111111111111')
-    });
-    workbookReader.on('error', (err) => {
-        console.log('错误2222222222222', err)
-    });
+    // workbookReader.on('end', () => {
+    //     loading.succeed('表格读取完成');
+    //     loading.stop()
+    // });
+    // workbookReader.on('error', (err) => {
+    //     console.log(`✔️ 读取表格错误${err}`)
+    //     loading.fail('表格读取错误')
+    // });
+
+    // 将以上方法改写为异步方法，表格读取完成后resolve，读取错误是reject错误信息
+    // 整个函数使用 await fileSaveAsCsv2 进行调用以获取return {codeType: 'UTF-8',fileName: filename,outPath: outPath} 的返回值
+    await new Promise((resolve, reject) => {
+        workbookReader.on('end', () => {
+            csvStream.end()
+            loading.succeed('表格读取完成');
+            loading.stop()
+            resolve()
+        });
+        workbookReader.on('error', (err) => {
+            console.log(`✔️ 读取表格错误${err}`)
+            loading.fail('表格读取错误')
+            reject(new Error('表格读取错误'))
+        });
+    })
+
+    return {
+        codeType: 'UTF-8',
+        fileName: filename,
+        outPath: outPath
+    }
 
 }
 
@@ -236,26 +264,69 @@ async function detectEncode(fileName) {
 }
 
 // csv文件流式读取
-async function readCSVStream(filepath) {
-    const workbook = new ExcelJS.Workbook();
-    const stream = createReadStream(filepath);
-    stream.on('data', chunk => {
-        // 处理每个数据块
-        // console.log('Received', chunk.length, 'bytes of data.');
-    })
-    stream.on('end', () => {
-        // console.log(`✔️ 读取文件结束，文件路径-->: ${filepath}`);
-    })
-    stream.on('error', error => {
-        throw new Error(`❌ CSV文件读取文件错误${error}`)
-    })
+// async function readCSVStream(filepath) {
+//     const workbook = new ExcelJS.Workbook();
+//     const stream = createReadStream(filepath);
+//     stream.on('data', chunk => {
+//         // 处理每个数据块
+//         // console.log('Received', chunk.length, 'bytes of data.');
+//     })
+//     stream.on('end', () => {
+//         // console.log(`✔️ 读取文件结束，文件路径-->: ${filepath}`);
+//     })
+//     stream.on('error', error => {
+//         throw new Error(`❌ CSV文件读取文件错误${error}`)
+//     })
 
-    // await workbook.xlsx.read(stream);
-    // const worksheet = workbook.getWorksheet(1);
-    const worksheet = await workbook.csv.read(stream);
+//     // await workbook.xlsx.read(stream);
+//     // const worksheet = workbook.getWorksheet(1);
+//     const worksheet = await workbook.csv.read(stream);
 
-    return { workbook, worksheet }
+//     return { workbook, worksheet }
+// }
+
+async function readCSVStream2(filepath) {
+    // const workbook = new ExcelJS.Workbook();
+    // const stream = createReadStream(filepath);
+    // stream.on('data', chunk => {
+    //     // 处理每个数据块
+    //     // console.log('Received', chunk.length, 'bytes of data.');
+    // })
+    // stream.on('end', () => {
+    //     // console.log(`✔️ 读取文件结束，文件路径-->: ${filepath}`);
+    // })
+    // stream.on('error', error => {
+    //     throw new Error(`❌ CSV文件读取文件错误${error}`)
+    // })
+
+    // // await workbook.xlsx.read(stream);
+    // // const worksheet = workbook.getWorksheet(1);
+    // const worksheet = await workbook.csv.read(stream);
+    // // const worksheet = await workbook.csv.readFile(filepath);
+    // return { workbook, worksheet }
+
+    const readStream = createReadStream(filepath);
+    const csvStream = csv.parseStream({ headers: true });
+
+    csvStream.on('data', (data) => {
+        // 修改数据逻辑
+        const modifiedData = {};
+        for (const key in data) {
+            modifiedData[key.toUpperCase()] = data[key];
+        }
+
+        // 处理修改后的数据，例如写入新的CSV文件或者进行其他操作
+        console.log(modifiedData);
+    });
+
+    csvStream.on('end', () => {
+        console.log('CSV parsing finished.');
+        readStream.close();
+    });
+
+    readStream.pipe(csvStream);
 }
+
 
 // excel文件流式读取
 async function readExcelStream(filepath) {
@@ -295,8 +366,24 @@ async function getHeaderCol(worksheet) {
     return { headers: headers, colLenth: worksheet.columns.length }
 }
 
-async function cleanHeader(filePath) {
-    let { workbook, worksheet } = await readCSVStream(filePath);
+// async function cleanHeader(filePath) {
+//     let { workbook, worksheet } = await readCSVStream(filePath);
+//     let { headers, colLenth } = await getHeaderCol(worksheet)
+//     let newHeaders = []
+//     headers.forEach((e, i, a) => {
+//         // step0 去除空格,step1 去除标点符号, step2数字开头修复,step3 字符长度限制
+//         let step0 = e.value.replaceAll(' ', '');
+//         let step1 = step0.replaceAll(tableHeadReg, '')
+//         let step2 = /^(\d)/.test(step1) ? `修正${step1}` : step1
+//         let step3 = step2.length > 15 ? step2.slice(0, 15) : step2
+//         let str = (e.value.trim().length === 0) ? `空字段${i + 1}` : step3
+//         newHeaders.push(str)
+//     })
+//     return { workbook, worksheet, newHeaders }
+// }
+
+async function cleanHeader2(filePath) {
+    let { workbook, worksheet } = await readCSVStream2(filePath);
     let { headers, colLenth } = await getHeaderCol(worksheet)
     let newHeaders = []
     headers.forEach((e, i, a) => {
@@ -308,7 +395,8 @@ async function cleanHeader(filePath) {
         let str = (e.value.trim().length === 0) ? `空字段${i + 1}` : step3
         newHeaders.push(str)
     })
-    return { workbook, worksheet, newHeaders }
+    console.log(newHeaders)
+    // return { workbook, worksheet, newHeaders }
 }
 
 async function appendNewHeader(workbook, worksheet, arr, outPath) {
@@ -358,7 +446,7 @@ async function createDDL(arr, tableName, fileName) {
         await fs.writeFile(outPath, ddl)
         console.log(`✔️ DDL文件创建成功, DDL路径-->：${outPath}`);
     } catch (error) {
-        console.error('❌ 写入DDL文件时发生错误:', error);
+        console.error(`❌ 写入DDL文件时发生错误: ${error}`);
     }
 
     return ddl
@@ -372,10 +460,19 @@ async function handleFile(filePath) {
     const extensionWithoutDot = extension.replace(/^\./, '');
     if ((/\.xlsx$|\.xls$|\.csv$/g).test(extension)) {
         // 不同类型文件调用不同方法 - table drive 
-        // let { codeType, fileName, outPath } = await fileTypeHandle[extensionWithoutDot](choice)
-        await fileTypeHandle[extensionWithoutDot](choice)
+        let { codeType, fileName, outPath } = await fileTypeHandle[extensionWithoutDot](choice)
+        // await fileTypeHandle[extensionWithoutDot](choice)
         //将转码utf-8后的csv文件，清洗表头，另存为同名原文件
-        // let { workbook, worksheet, newHeaders } = await cleanHeader(outPath)
+        await cleanHeader2(outPath)
+
+        // 延迟读取，疑似有写入未释放就开始读取了
+        // await (function () {
+        //     setTimeout(async function () {
+        //         await cleanHeader2(outPath)
+        //     }, 3000)
+        // }())
+
+        // let { workbook, worksheet, newHeaders } = await cleanHeader2(outPath)
         // let { ddlHeader } = await appendNewHeader(workbook, worksheet, newHeaders, outPath)
         // let ddl = await createDDL(ddlHeader, `IMPORT_${getFormattedDateTime()}`, fileName)
         // console.log(ddl)
@@ -386,7 +483,7 @@ async function handleFile(filePath) {
 }
 
 handleFile(process.cwd()).catch(err => {
-    console.log('❌ 读取命令行发生错误：', err)
+    console.log(`❌ 读取命令行发生错误：, ${err}`)
     throw err
 })
 
@@ -551,8 +648,6 @@ handleFile(process.cwd()).catch(err => {
 
 
 
-
-
 // const { createReadStream, createWriteStream } = require('fs');
 
 // const readStream = createReadStream('../largefile.txt', {
@@ -616,3 +711,16 @@ handleFile(process.cwd()).catch(err => {
 //         csvStream.write(currentBatch);
 //     }
 // });
+
+
+// console.log(row.worksheet)
+// console.log(row.worksheet.id)
+// console.log(row.worksheet.workbook.stream)
+// console.log(row.worksheet._events)
+
+// console.log(row.worksheet.workbook._events)
+// console.log(row.worksheet.workbook.stream.bytesRead)
+// console.log(row.worksheet.workbook.options)
+// console.log(row.worksheet.workbook.sharedStrings)
+// console.log(row.worksheet.workbook.properties)
+// console.log(row.worksheet.workbook.workbookRels)
