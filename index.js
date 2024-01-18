@@ -10,6 +10,13 @@ import ExcelJS from 'exceljs';
 
 import csv from 'fast-csv';
 
+import v8 from 'v8';
+const heapStatistics = v8.getHeapStatistics();
+const defaultHeapSize = (heapStatistics.heap_size_limit / 1024 / 1024).toFixed(2)
+
+
+
+
 const fileTypeHandle = {
     'xlsx': fileSaveAsCsv2,
     'xls': fileSaveAsCsv2,
@@ -18,9 +25,9 @@ const fileTypeHandle = {
 
 const tableHeadReg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*`·+,\-.\/:;<=>?@\[\]^{|}~]+)/g
 // const tableHeadReg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*`·+,\-.\/:;<=>?@\[\]^_{|}~]+)/g
+const commaReg = /[\uff0c]+|,+/g
 
-
-// 时间戳函数
+// 生成DDL时间戳函数
 function getFormattedDateTime() {
     var date = new Date();
     var month = (date.getMonth() + 1).toString().padStart(2, '0'); // 月份从0开始，需要加1
@@ -31,6 +38,11 @@ function getFormattedDateTime() {
 
     var formattedDateTime = month + day + hours + minutes + seconds;
     return formattedDateTime;
+}
+
+//清洗单元格comma
+function cleanComma(str, commaReg) {
+    return str.replaceAll(commaReg, '')
 }
 
 
@@ -174,46 +186,27 @@ async function fileSaveAsCsv2(filename) {
     workbookReader.read();
 
     workbookReader.on('worksheet', worksheet => {
+        // console.log(worksheet.rowCount)
         worksheet.on('row', row => {
-            // on方法配合map过滤，遍历8万次后内存溢出，如何改进？
-            // console.log(row.values)
-            // rowData = row.values.slice(1);
-            var abc = row.values.map(e => {
+            console.log(row.cells)
+            console.log(row.number)
+            console.log(row.values)
+            // 第一轮遍历将单元格公式转换成具体的值
+            var cellContent = row.values.map(e => {
                 return (e instanceof Object && e['result']) ? e['result'] : e
             })
-            console.log(abc, row.number)
-            csvStream.write(row.values)
-            // csvStream.write(abc)
+                //第二轮遍历去除逗号
+                .map(e => {
+                    return (typeof (e) === 'string') ? cleanComma(e, commaReg) : e
+                })
+            // console.log(row.number)
+            // 忽略第一个列（行号）
+            csvStream.write(cellContent.slice(1))
+            var memoryUsage = process.memoryUsage();
+            // console.log(`Default heap size: ${defaultHeapSize} MB,   Heap memory usage: ${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)} MB`);
+
+
         });
-
-
-        //         const batchSize = 1000;
-        // let currentBatch = [];
-
-        // worksheet.on('row', row => {
-        //     var abc = row.values.map(e => {
-        //         return (e instanceof Object && e['result']) ? e['result'] : e;
-        //     });
-
-        //     currentBatch.push(abc);
-
-        //     if (currentBatch.length >= batchSize) {
-        //         // 处理批次（例如，写入CSV）
-        //         csvStream.write(currentBatch);
-
-        //         // 为下一组行清除批次
-        //         currentBatch = [];
-        //     }
-        // });
-
-        // // 确保在循环后处理任何剩余的行
-        // worksheet.on('end', () => {
-        //     if (currentBatch.length > 0) {
-        //         // 处理剩余的行
-        //         csvStream.write(currentBatch);
-        //     }
-        // });
-
     });
 
     workbookReader.on('end', () => {
@@ -348,7 +341,6 @@ async function createDDL(arr, tableName, fileName) {
 
     })
     let ddl = `
-    DROP TABLE IF EXISTS ${tableName};
     CREATE TABLE ${tableName} 
     (
             ${str}
@@ -592,4 +584,35 @@ handleFile(process.cwd()).catch(err => {
 
 // writeStream.on('close', function () {
 //     console.log("Writing done.");
+// });
+
+
+
+
+
+//         const batchSize = 1000;
+// let currentBatch = [];
+
+// worksheet.on('row', row => {
+//     var abc = row.values.map(e => {
+//         return (e instanceof Object && e['result']) ? e['result'] : e;
+//     });
+
+//     currentBatch.push(abc);
+
+//     if (currentBatch.length >= batchSize) {
+//         // 处理批次（例如，写入CSV）
+//         csvStream.write(currentBatch);
+
+//         // 为下一组行清除批次
+//         currentBatch = [];
+//     }
+// });
+
+// // 确保在循环后处理任何剩余的行
+// worksheet.on('end', () => {
+//     if (currentBatch.length > 0) {
+//         // 处理剩余的行
+//         csvStream.write(currentBatch);
+//     }
 // });
