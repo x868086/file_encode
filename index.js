@@ -724,3 +724,13 @@ handleFile(process.cwd()).catch(err => {
 // console.log(row.worksheet.workbook.sharedStrings)
 // console.log(row.worksheet.workbook.properties)
 // console.log(row.worksheet.workbook.workbookRels)
+
+
+
+// 在Node.js中，os模块提供了一些与操作系统相关的实用函数和属性。这里的EOL是一个常量，它代表了当前操作系统的行尾符（End Of Line）。
+
+// 在Windows系统上，EOL的值是 \r\n。
+// 在Unix/Linux系统以及macOS上，EOL的值是 \n。
+// 通过引入这个常量，你可以确保在编写跨平台代码时使用正确的换行符，而无需关心具体运行环境。例如，在写入文件或生成字符串内容时，可以这样使用：
+// const { EOL } = require('os');
+// const text = 'Hello' + EOL + 'World';
