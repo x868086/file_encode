@@ -6,14 +6,15 @@ import iconv from 'iconv-lite'
 import inquirer from 'inquirer';
 import chalk from 'chalk'
 import ExcelJS from 'exceljs';
-
 import csv from 'fast-csv';
-
 import ora from 'ora';
 
-import v8 from 'v8';
-const heapStatistics = v8.getHeapStatistics();
-const defaultHeapSize = (heapStatistics.heap_size_limit / 1024 / 1024).toFixed(2)
+import {
+    fileSaveAsCsv,
+    renameHeader
+} from './excel-methods.js'
+
+
 
 const loading = ora({
     color: 'green',
@@ -23,14 +24,18 @@ const loading = ora({
 
 
 const fileTypeHandle = {
-    'xlsx': fileSaveAsCsv2,
-    'xls': fileSaveAsCsv2,
+    'xlsx': fileSaveAsCsv,
+    'xls': fileSaveAsCsv,
     'csv': csvMethod
 }
 
 const tableHeadReg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*`·+,\-.\/:;<=>?@\[\]^{|}~]+)/g
 // const tableHeadReg = /([\u3002|\uff1f|\uff01|\uff0c|\u3001|\uff1b|\uff1a|\u201c|\u201d|\u2018|\u2019|\uff08|\uff09|\u300a|\u300b|\u3008|\u3009|\u3010|\u3011|\u300e|\u300f|\u300c|\u300d|\ufe43|\ufe44|\u3014|\u3015|\u2026|\u2014|\uff5e|\ufe4f|\uffe5]+)|([\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*`·+,\-.\/:;<=>?@\[\]^_{|}~]+)/g
 const commaReg = /[\uff0c]+|,+/g
+
+function cleanComma(str, commaReg) {
+    return str.replaceAll(commaReg, '')
+}
 
 // 生成DDL时间戳函数
 function getFormattedDateTime() {
@@ -45,10 +50,7 @@ function getFormattedDateTime() {
     return formattedDateTime;
 }
 
-//清洗单元格comma
-function cleanComma(str, commaReg) {
-    return str.replaceAll(commaReg, '')
-}
+
 
 
 
@@ -151,30 +153,30 @@ async function writeFileStream(filename, data) {
 // }
 
 // 常规流的方式读取表格，不适用于大型表格文件
-async function fileSaveAsCsv(filename) {
-    let { workbook, worksheet } = await readExcelStream(filename)
+// async function fileSaveAsCsv(filename) {
+//     let { workbook, worksheet } = await readExcelStream(filename)
 
-    let outPath = path.join(process.cwd(), filename + '.utf8.csv')
-    const stream = createWriteStream(outPath);
-    stream.on('data', chunk => {
-        // 处理每个数据块
-        console.log('Received', chunk.length, 'bytes of data.');
-    })
-    stream.on('end', () => {
-        // console.log(`✔️ 读取文件结束，文件路径-->: ${filepath}`);
-    })
-    stream.on('error', error => {
-        throw new Error(`❌ CSV文件读取文件错误${error}`)
-    })
-    await workbook.csv.write(stream, { sheetId: 1 });
-    console.log(`✔️ EXCEL另存为CSV,编码格式${chalk.bgGreen('UTF-8')},  文件路径-->：${outPath}`);
-    stream.end()
-    return {
-        codeType: 'UTF-8',
-        fileName: filename,
-        outPath: outPath
-    }
-}
+//     let outPath = path.join(process.cwd(), filename + '.utf8.csv')
+//     const stream = createWriteStream(outPath);
+//     stream.on('data', chunk => {
+//         // 处理每个数据块
+//         console.log('Received', chunk.length, 'bytes of data.');
+//     })
+//     stream.on('end', () => {
+//         // console.log(`✔️ 读取文件结束，文件路径-->: ${filepath}`);
+//     })
+//     stream.on('error', error => {
+//         throw new Error(`❌ CSV文件读取文件错误${error}`)
+//     })
+//     await workbook.csv.write(stream, { sheetId: 1 });
+//     console.log(`✔️ EXCEL另存为CSV,编码格式${chalk.bgGreen('UTF-8')},  文件路径-->：${outPath}`);
+//     stream.end()
+//     return {
+//         codeType: 'UTF-8',
+//         fileName: filename,
+//         outPath: outPath
+//     }
+// }
 
 
 // 流式读取表格逐行处理，另存为utf8 csv文件，适用大型表格文件
@@ -195,6 +197,7 @@ async function fileSaveAsCsv2(filename) {
         loading.text = 'Loading...'
         loading.start()
         worksheet.on('row', row => {
+            console.log(row.worksheet.workbook._events)
             loading.suffixText = `  内存使用 ${(((process.memoryUsage()).heapTotal) / 1024 / 1024).toFixed(2)} MB`
             // 只读取第一个sheet
             if (row.worksheet.id === 1) {
@@ -434,7 +437,7 @@ async function createDDL(arr, tableName, fileName) {
             ${str}
     );`
     // DDL写入到文本文件
-    let outPath = path.join(process.cwd(), fileName + '.DDL.txt')
+    let ddlPath = path.join(process.cwd(), fileName + '.DDL.txt')
     //fs.writeFile(outPath, ddl, (err) => {
     //     if (err) {
     //         console.error('❌ 写入DDL文件时发生错误:', err);
@@ -443,39 +446,31 @@ async function createDDL(arr, tableName, fileName) {
     //     }
     // });
     try {
-        await fs.writeFile(outPath, ddl)
-        console.log(`✔️ DDL文件创建成功, DDL路径-->：${outPath}`);
+        await fs.writeFile(ddlPath, ddl)
     } catch (error) {
         console.error(`❌ 写入DDL文件时发生错误: ${error}`);
     }
 
-    return ddl
+    return { ddl, ddlPath }
 }
 
 
 async function handleFile(filePath) {
     let files = await getFileList(filePath)
     let choice = await diyFiles(files)
+    // debug flag
+    // let choice = '2024年1月以移带固.xlsx'
+    // let choice = '67890.xlsx'
     const extension = path.extname(choice)
     const extensionWithoutDot = extension.replace(/^\./, '');
     if ((/\.xlsx$|\.xls$|\.csv$/g).test(extension)) {
         // 不同类型文件调用不同方法 - table drive 
         let { codeType, fileName, outPath } = await fileTypeHandle[extensionWithoutDot](choice)
-        // await fileTypeHandle[extensionWithoutDot](choice)
-        //将转码utf-8后的csv文件，清洗表头，另存为同名原文件
-        await cleanHeader2(outPath)
-
-        // 延迟读取，疑似有写入未释放就开始读取了
-        // await (function () {
-        //     setTimeout(async function () {
-        //         await cleanHeader2(outPath)
-        //     }, 3000)
-        // }())
-
-        // let { workbook, worksheet, newHeaders } = await cleanHeader2(outPath)
-        // let { ddlHeader } = await appendNewHeader(workbook, worksheet, newHeaders, outPath)
-        // let ddl = await createDDL(ddlHeader, `IMPORT_${getFormattedDateTime()}`, fileName)
+        let { ddlHeader } = await renameHeader(outPath, fileName)
+        let { ddl, ddlPath } = await createDDL(ddlHeader, `IMPORT_${getFormattedDateTime()}`, fileName)
         // console.log(ddl)
+        console.log(`
+✔️ DDL文件创建成功, DDL路径-->: ${ddlPath}`)
     } else {
         console.log(`❌ ${chalk.green(暂不支持该文件格式)}`)
         return false
