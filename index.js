@@ -14,7 +14,7 @@ import {
     renameHeader
 } from './excel-methods.js'
 
-
+import { csvMethod } from './csv-methods.js'
 
 const loading = ora({
     color: 'green',
@@ -56,27 +56,27 @@ function getFormattedDateTime() {
 
 
 // csv文件方法
-async function csvMethod(choice) {
-    let { fileName, souceType } = await detectEncode(choice)
-    if (souceType === 'UTF-8') {
-        console.log(`✔️ 当前格式为${chalk.bgGreen(souceType)}可直接导入, 文件路径-->：${path.join(process.cwd(), fileName)}`)
-        return {
-            codeType: souceType,
-            fileName: fileName,
-            outPath: path.join(process.cwd(), fileName)
-        }
-    } else if (souceType === 'GB18030') {
-        let { outPath } = await encodeSave(fileName, souceType)
-        return {
-            codeType: souceType,
-            fileName: fileName,
-            outPath: outPath
-        }
-    } else {
-        console.log(`❌ 不支持的文件编码格式`)
-        return false
-    }
-}
+// async function csvMethod(choice) {
+//     let { fileName, souceType } = await detectEncode(choice)
+//     if (souceType === 'UTF-8') {
+//         console.log(`✔️ 当前格式为${chalk.bgGreen(souceType)}可直接导入, 文件路径-->：${path.join(process.cwd(), fileName)}`)
+//         return {
+//             codeType: souceType,
+//             fileName: fileName,
+//             outPath: path.join(process.cwd(), fileName)
+//         }
+//     } else if (souceType === 'GB18030') {
+//         let { outPath } = await encodeSave(fileName, souceType)
+//         return {
+//             codeType: souceType,
+//             fileName: fileName,
+//             outPath: outPath
+//         }
+//     } else {
+//         console.log(`❌ 不支持的文件编码格式`)
+//         return false
+//     }
+// }
 
 
 //异步读取文件列表
@@ -105,25 +105,25 @@ async function diyFiles(lists) {
     return answers.choice
 }
 
-// csv格式文件转码另存
-async function encodeSave(filePath, souceType) {
-    let encoded = await convertEncoding(filePath, souceType)
-    let { codeType, fileName, outPath } = await writeFileStream(filePath, encoded)
-    return {
-        codeType: codeType,
-        fileName: fileName,
-        outPath: outPath
-    }
-}
+// // csv格式文件转码另存
+// async function encodeSave(filePath, souceType) {
+//     let encoded = await convertEncoding(filePath, souceType)
+//     let { codeType, fileName, outPath } = await writeFileStream(filePath, encoded)
+//     return {
+//         codeType: codeType,
+//         fileName: fileName,
+//         outPath: outPath
+//     }
+// }
 
-// 文件转码
-async function convertEncoding(filePath, souceType) {
-    console.log(chalk.yellow(`当前格式为${souceType},正在转换成UTF-8`))
-    let data = await fs.readFile(filePath, 'binary')
-    const decoded = iconv.decode(data, souceType.toLowerCase());
-    const encoded = iconv.encode(decoded, 'utf8');
-    return encoded
-}
+// // 文件转码
+// async function convertEncoding(filePath, souceType) {
+//     console.log(chalk.yellow(`当前格式为${souceType},正在转换成UTF-8`))
+//     let data = await fs.readFile(filePath, 'binary')
+//     const decoded = iconv.decode(data, souceType.toLowerCase());
+//     const encoded = iconv.encode(decoded, 'utf8');
+//     return encoded
+// }
 
 //写入文件
 async function writeFileStream(filename, data) {
@@ -251,20 +251,20 @@ async function fileSaveAsCsv2(filename) {
 
 
 //检测文件编码格式
-async function detectEncode(fileName) {
-    const data = await fs.readFile(fileName)
-    const fileInfo = await languageEncoding(data)
-    let souceType = fileInfo.encoding
-    let dict = {
-        'UTF-8': chalk.bgGreen(`${souceType}`),
-        'GB18030': chalk.bgYellow(`${souceType}`)
-    }
-    console.log(`文件当前编码格式:${dict[souceType]} 文件名称:${fileName}`)
-    return {
-        fileName,
-        souceType
-    }
-}
+// async function detectEncode(fileName) {
+//     const data = await fs.readFile(fileName)
+//     const fileInfo = await languageEncoding(data)
+//     let souceType = fileInfo.encoding
+//     let dict = {
+//         'UTF-8': chalk.bgGreen(`${souceType}`),
+//         'GB18030': chalk.bgYellow(`${souceType}`)
+//     }
+//     console.log(`文件当前编码格式:${dict[souceType]} 文件名称:${fileName}`)
+//     return {
+//         fileName,
+//         souceType
+//     }
+// }
 
 // csv文件流式读取
 // async function readCSVStream(filepath) {
@@ -456,11 +456,12 @@ async function createDDL(arr, tableName, fileName) {
 
 
 async function handleFile(filePath) {
-    let files = await getFileList(filePath)
-    let choice = await diyFiles(files)
+    // let files = await getFileList(filePath)
+    // let choice = await diyFiles(files)
     // debug flag
     // let choice = '2024年1月以移带固.xlsx'
     // let choice = '67890.xlsx'
+    let choice = 'demo3.csv'
     const extension = path.extname(choice)
     const extensionWithoutDot = extension.replace(/^\./, '');
     if ((/\.xlsx$|\.xls$|\.csv$/g).test(extension)) {

@@ -141,7 +141,7 @@ async function renameHeader(tempFilePath, fileName) {
     csvWriter.on('end', () => {
         writeStream.end()
         loading.suffixText = ``
-        loading.succeed(`表格写入完成, 导入文件路径-->: ${path.join(process.cwd(), fileName)}`);
+        loading.succeed(`表格写入完成, 导入文件路径-->: ${outputFilePath}`);
         loading.stop()
     })
     await new Promise((resolve, reject) => {
