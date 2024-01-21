@@ -456,12 +456,12 @@ async function createDDL(arr, tableName, fileName) {
 
 
 async function handleFile(filePath) {
-    // let files = await getFileList(filePath)
-    // let choice = await diyFiles(files)
+    let files = await getFileList(filePath)
+    let choice = await diyFiles(files)
     // debug flag
     // let choice = '2024年1月以移带固.xlsx'
     // let choice = '67890.xlsx'
-    let choice = 'demo3.csv'
+    // let choice = 'demo3.csv'
     const extension = path.extname(choice)
     const extensionWithoutDot = extension.replace(/^\./, '');
     if ((/\.xlsx$|\.xls$|\.csv$/g).test(extension)) {

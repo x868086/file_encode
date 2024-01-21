@@ -37,7 +37,7 @@ async function detectEncode(fileName) {
 // csv格式文件转码另存
 async function encodeSave(fileName, souceType) {
     console.log(chalk.yellow(`当前格式为${souceType},正在转换成UTF-8`))
-    let outPath = path.join(process.cwd(), `${fileName}.utf8.csv`);
+    let outPath = path.join(process.cwd(), `${fileName}.temp.csv`);
     const readStream = createReadStream(fileName);
     const writeStream = createWriteStream(outPath);
 
@@ -68,7 +68,8 @@ async function encodeSave(fileName, souceType) {
     })
     return {
         codeType: 'UTF-8',
-        fileName: `${fileName}.utf8.csv`,
+        fileName: fileName,
+        // `${fileName}.utf8.csv`
         outPath: outPath
     }
 }
@@ -86,7 +87,7 @@ async function csvMethod(choice) {
             outPath: path.join(process.cwd(), fileName)
         }
     } else if (souceType === 'GB18030') {
-        let { codeType, fileName, outPath } = await encodeSave(fileName, souceType)
+        let { codeType, outPath } = await encodeSave(fileName, souceType)
         return {
             codeType: codeType,
             fileName: fileName,
