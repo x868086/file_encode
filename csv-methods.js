@@ -69,7 +69,6 @@ async function encodeSave(fileName, souceType) {
     return {
         codeType: 'UTF-8',
         fileName: fileName,
-        // `${fileName}.utf8.csv`
         outPath: outPath
     }
 }
